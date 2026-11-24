@@ -301,6 +301,17 @@
       border: 1.5px solid #cbd5e1;
       flex: 0.65;
     }
+    .g-btn-skip {
+      background: #1e293b;
+      color: #e2e8f0;
+      flex: 0.65;
+    }
+    .mini-card.is-skip {
+      background: #f8fafc;
+      border-left: 4px solid #94a3b8;
+      opacity: 0.72;
+    }
+    .st-skip { background: #e2e8f0; color: #334155; }
 
     /* ==========================================================================
        4. Scrollable List of All Customers
@@ -499,6 +510,9 @@
           <span>🪟</span><span id="txtSplitBtn">スプリット地図</span>
         </button>
         <!-- Open Project & Setup Modal -->
+        <button onclick="openFilterModal()" class="header-btn" style="background:#8b5cf6; color:#fff; border-color:#7c3aed;" title="購入履歴から配布対象を条件で絞り込む">
+          <span>🎯</span><span>条件絞り込み</span>
+        </button>
         <button onclick="openSetupModal()" class="header-btn" style="background:#fde047; color:#0f172a; border-color:#facc15;" title="プロジェクト（案件）の切替や新規追加">
           <span>📁</span><span>案件切替/Excel</span>
         </button>
@@ -529,7 +543,7 @@
     </div>
     <div style="background:#f8fafc; padding:3px 12px; font-size:10.5px; color:#334155; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0;">
       <span>📊 配布進捗: <strong id="lblProgressSummary" style="color:#0284c7;">0 / 0件 (0%)</strong></span>
-      <span style="font-size:9.5px; color:#64748b;">📍 最短未訪問先を自動案内</span>
+      <span id="lblFilterRule" onclick="openFilterModal()" style="font-size:9.5px; color:#64748b; text-decoration:underline dotted;">📍 最短未訪問先を自動案内</span>
     </div>
 
     <!-- Main Viewport Area -->
@@ -581,6 +595,9 @@
           <button onclick="markCurrentAbsent()" class="g-btn g-btn-absent" title="不在だった場合">
             <span>⚠️</span><span>不在</span>
           </button>
+          <button onclick="markCurrentSkip()" class="g-btn g-btn-skip" title="今年は配布しない人と記録する場合">
+            <span>🚫</span><span>配らない</span>
+          </button>
         </div>
       </section>
 
@@ -590,6 +607,7 @@
           <button onclick="setListFilter('all')" id="fltAll" style="background:#0284c7; color:#fff; border:none; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:800; cursor:pointer;">すべて (<span id="cntAll">0</span>)</button>
           <button onclick="setListFilter('remain')" id="fltRemain" style="background:#e2e8f0; color:#475569; border:none; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; cursor:pointer;">未訪問 (<span id="cntRemain">0</span>)</button>
           <button onclick="setListFilter('absent')" id="fltAbsent" style="background:#e2e8f0; color:#475569; border:none; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; cursor:pointer;">不在 (<span id="cntAbsent">0</span>)</button>
+          <button onclick="setListFilter('skip')" id="fltSkip" style="background:#e2e8f0; color:#475569; border:none; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; cursor:pointer;">🚫 配らない (<span id="cntSkip">0</span>)</button>
         </div>
         <span style="font-size:10px; color:#64748b;">タップで対象選択</span>
       </div>
@@ -663,6 +681,17 @@
       </div>
     </div>
 
+    <!-- Filter Rule Builder Modal (3ステップ条件づくり) -->
+    <div id="filterModal" class="modal-backdrop hidden" onclick="closeFilterModal()">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="modal-title">
+          <span>🎯 条件絞り込み（3ステップ）</span>
+          <button onclick="closeFilterModal()" style="background:none; border:none; font-size:18px; color:#64748b; cursor:pointer;">✕</button>
+        </div>
+        <div id="filterModalBody"></div>
+      </div>
+    </div>
+
   </div>
 
   <script>
@@ -675,12 +704,15 @@
     let currentFocusTarget = null;
     let currentListFilter = 'all';
     let isInAppSplitOpen = false;
+    let filterRule = null;            // 適用中の絞り込み条件 {years, minAmount}
+    let draftRule = { years: null, minAmount: null };
+    const PRESET_KEY = 'yoshimachi_filter_presets_v1';
 
     // Default Fictitious Demo Sample (完全な架空のテスト用見本データ)
     const DEFAULT_DATA = [
-      { row: 2, id: 9001, name: "サンプル 太郎（見本）", kana: "ｻﾝﾌﾟﾙﾀﾛｳ", addr: "青森県架空市サンプル町１丁目１－１", phone: "090-0000-0001", rank: "A", rfm: "555", memo: "手渡し見本。右上の「設定/Excel」から実際のエクセルを開いてください。", coords: { lat: 40.691165, lng: 140.618245 }, done: 0, doneType: "none", time: "" },
-      { row: 3, id: 9002, name: "テスト 花子（見本）", kana: "ﾃｽﾄﾊﾅｺ", addr: "青森県架空市デモ町２丁目２－２", phone: "090-0000-0002", rank: "B", rfm: "444", memo: "不在時ポスト投函のテスト用。ワンタップで記録を試せます。", coords: { lat: 40.690783, lng: 140.618325 }, done: 1, doneType: "post", time: "09:30" },
-      { row: 4, id: 9003, name: "架空 一郎（見本）", kana: "ｶｸｳｲﾁﾛｳ", addr: "青森県架空市見本通り３丁目３－３", phone: "090-0000-0003", rank: "C", rfm: "333", memo: "「Googleマップで案内」を押すとナビ動作をテストできます。", coords: { lat: 40.692500, lng: 140.621000 }, done: 0, doneType: "none", time: "" }
+      { row: 2, id: 9001, name: "サンプル 太郎（見本）", kana: "ｻﾝﾌﾟﾙﾀﾛｳ", addr: "青森県架空市サンプル町１丁目１－１", phone: "090-0000-0001", rank: "A", rfm: "555", memo: "手渡し見本。右上の「設定/Excel」から実際のエクセルを開いてください。", r: "2026/04/12", f: 4, m: 128000, coords: { lat: 40.691165, lng: 140.618245 }, done: 0, doneType: "none", time: "" },
+      { row: 3, id: 9002, name: "テスト 花子（見本）", kana: "ﾃｽﾄﾊﾅｺ", addr: "青森県架空市デモ町２丁目２－２", phone: "090-0000-0002", rank: "B", rfm: "444", memo: "不在時ポスト投函のテスト用。ワンタップで記録を試せます。", r: "2025/01/05", f: 2, m: 36000, coords: { lat: 40.690783, lng: 140.618325 }, done: 1, doneType: "post", time: "09:30" },
+      { row: 4, id: 9003, name: "架空 一郎（見本）", kana: "ｶｸｳｲﾁﾛｳ", addr: "青森県架空市見本通り３丁目３－３", phone: "090-0000-0003", rank: "C", rfm: "333", memo: "「条件絞り込み」で除外される例（9年前・9,500円）。", r: "2017/03/01", f: 1, m: 9500, coords: { lat: 40.692500, lng: 140.621000 }, done: 0, doneType: "none", time: "" }
     ];
 
     window.addEventListener('DOMContentLoaded', () => {
@@ -826,6 +858,41 @@
       return R * c;
     }
 
+    // ===== 🚫 配らない / 🎯 条件絞り込みヘルパー =====
+    function isSkip(c) { return c.doneType === 'skip'; }
+    function parseRDate(v) {
+      if (!v) return null;
+      if (v instanceof Date) return v;
+      if (typeof v === 'number' && v > 20000) {
+        // Excel日付シリアル値（1899-12-30起算）
+        return new Date(Math.round((v - 25569) * 86400 * 1000));
+      }
+      const s = String(v).trim().replace(/[.\-]/g, '/');
+      const tm = Date.parse(s);
+      return isNaN(tm) ? null : new Date(tm);
+    }
+    function passesRule(c) {
+      if (!filterRule) return true;
+      if (isSkip(c)) return false;
+      const d = parseRDate(c.r);
+      const amt = Number(c.m);
+      if (!d || isNaN(amt) || amt <= 0) return false;
+      const yearsAgo = (Date.now() - d.getTime()) / (365.25 * 24 * 3600 * 1000);
+      return yearsAgo <= filterRule.years && amt >= filterRule.minAmount;
+    }
+    function fmtMan(n) { return n >= 10000 ? (n / 10000) + '万円' : n + '円'; }
+    function updateFilterBadge() {
+      const el = document.getElementById('lblFilterRule');
+      if (!el) return;
+      if (filterRule) {
+        el.textContent = `🎯 条件: 直近${filterRule.years}年・${fmtMan(filterRule.minAmount)}以上`;
+        el.style.color = '#7c3aed'; el.style.fontWeight = '800';
+      } else {
+        el.textContent = '📍 最短未訪問先を自動案内';
+        el.style.color = '#64748b'; el.style.fontWeight = 'normal';
+      }
+    }
+
     function recalculateDistances() {
       customers.forEach(c => {
         if (c.coords && c.coords.lat && c.coords.lng) {
@@ -843,8 +910,9 @@
 
       // Select the closest unvisited customer as focus target
       // (If all are done, fallback to the closest customer)
-      const closestUnvisited = customers.find(x => x.done === 0);
+      const closestUnvisited = customers.find(x => x.done === 0 && !isSkip(x) && passesRule(x));
       currentFocusTarget = closestUnvisited || customers[0] || null;
+      updateFilterBadge();
 
       renderFocusCard();
       renderList();
@@ -889,21 +957,24 @@
       container.innerHTML = '';
 
       let filtered = customers.filter(c => {
-        if (currentListFilter === 'remain') return c.done === 0;
+        if (currentListFilter === 'remain') return c.done === 0 && !isSkip(c) && passesRule(c);
         if (currentListFilter === 'absent') return c.doneType === 'absent';
+        if (currentListFilter === 'skip') return isSkip(c);
+        if (filterRule && !isSkip(c) && c.done === 0 && !passesRule(c)) return false;
         return true;
       });
 
       filtered.forEach(c => {
         const isCurrent = currentFocusTarget && currentFocusTarget.id === c.id;
         const card = document.createElement('div');
-        card.className = `mini-card ${isCurrent ? 'active-target' : ''} ${c.done === 1 ? 'is-done' : ''} ${c.doneType === 'absent' ? 'is-absent' : ''}`;
+        card.className = `mini-card ${isCurrent ? 'active-target' : ''} ${c.done === 1 ? 'is-done' : ''} ${c.doneType === 'absent' ? 'is-absent' : ''} ${isSkip(c) ? 'is-skip' : ''}`;
         
         let stClass = 'st-remain';
         let stText = '未訪問';
         if (c.done === 1 && c.doneType === 'hand') { stClass = 'st-done'; stText = '🎁 手渡し済'; }
         else if (c.done === 1 && c.doneType === 'post') { stClass = 'st-done'; stText = '📬 投函済'; }
         else if (c.doneType === 'absent') { stClass = 'st-absent'; stText = '⚠️ 不在'; }
+        else if (isSkip(c)) { stClass = 'st-skip'; stText = '🚫 配らない'; }
 
         card.innerHTML = `
           <div class="mini-card-left">
@@ -931,8 +1002,10 @@
 
     // Update Progress Metrics
     function updateProgress() {
-      const total = customers.length;
-      const done = customers.filter(x => x.done === 1).length;
+      const skipN = customers.filter(isSkip).length;
+      const inScope = customers.filter(c => !isSkip(c) && passesRule(c));
+      const total = inScope.length;
+      const done = inScope.filter(x => x.done === 1).length;
       const absent = customers.filter(x => x.doneType === 'absent').length;
       const remain = total - done;
       const pct = total > 0 ? ((done / total) * 100).toFixed(1) : 0;
@@ -947,13 +1020,16 @@
       if (elBar) elBar.style.width = `${pct}%`;
 
       const elAll = document.getElementById('cntAll');
-      if (elAll) elAll.textContent = total;
+      if (elAll) elAll.textContent = customers.length;
 
       const elRemain = document.getElementById('cntRemain');
       if (elRemain) elRemain.textContent = remain;
 
       const elAbsent = document.getElementById('cntAbsent');
       if (elAbsent) elAbsent.textContent = absent;
+
+      const elSkip = document.getElementById('cntSkip');
+      if (elSkip) elSkip.textContent = skipN;
 
       saveCache();
     }
@@ -1031,7 +1107,7 @@
       else showToast(`📬 ${currentFocusTarget.name} 様のポストへ投函完了！(${timeStr})`);
 
       // Automatically advance to the next nearest unvisited target
-      const nextUnvisited = customers.find(x => x.done === 0);
+      const nextUnvisited = customers.find(x => x.done === 0 && !isSkip(x) && passesRule(x));
       if (nextUnvisited) {
         currentFocusTarget = nextUnvisited;
       }
@@ -1053,7 +1129,25 @@
 
       showToast(`⚠️ ${currentFocusTarget.name} 様 不在を記録しました`);
 
-      const nextUnvisited = customers.find(x => x.done === 0 && x.id !== currentFocusTarget.id);
+      const nextUnvisited = customers.find(x => x.done === 0 && !isSkip(x) && passesRule(x) && x.id !== currentFocusTarget.id);
+      if (nextUnvisited) {
+        currentFocusTarget = nextUnvisited;
+      }
+
+      renderFocusCard();
+      renderList();
+      updateProgress();
+    }
+
+    function markCurrentSkip() {
+      if (!currentFocusTarget) return;
+
+      currentFocusTarget.done = 0;
+      currentFocusTarget.doneType = 'skip';
+
+      showToast(`🚫 ${currentFocusTarget.name} 様を「配らない」にしました（候補から除外）`);
+
+      const nextUnvisited = customers.find(x => x.done === 0 && !isSkip(x) && passesRule(x) && x.id !== currentFocusTarget.id);
       if (nextUnvisited) {
         currentFocusTarget = nextUnvisited;
       }
@@ -1065,7 +1159,7 @@
 
     function setListFilter(f) {
       currentListFilter = f;
-      ['all', 'remain', 'absent'].forEach(key => {
+      ['all', 'remain', 'absent', 'skip'].forEach(key => {
         const btn = document.getElementById(`flt${key.charAt(0).toUpperCase() + key.slice(1)}`);
         if (key === f) {
           btn.style.background = '#0284c7';
@@ -1133,6 +1227,15 @@
               coords = { lat: parseFloat(p[0].trim()), lng: parseFloat(p[1].trim()) };
             }
 
+            const planFlag = r[4];      // E列: 配布予定 (0なら「配らない」設定)
+            const procMemo = String(r[17] || "").trim(); // R列: 処理（手渡し/投函/不在/配らない）
+            const pR = r[13], pF = r[14], pM = r[15];    // N/O/P列: 購買履歴
+
+            let doneType = 'none';
+            if (procMemo.indexOf('配らない') > -1 || (planFlag === 0 || planFlag === '0')) doneType = 'skip';
+            else if (doneFlag == 1) doneType = (procMemo.indexOf('投函') > -1) ? 'post' : 'hand';
+            else if (procMemo.indexOf('不在') > -1) doneType = 'absent';
+
             parsedList.push({
               row: i + 1,
               id: custId || (i + 1),
@@ -1143,10 +1246,11 @@
               phone: phone,
               rank: rank,
               rfm: rfm,
-              memo: "エクセルより読込",
+              memo: procMemo || "エクセルより読込",
+              r: pR || "", f: pF || 0, m: pM || 0,
               coords: coords,
               done: (doneFlag == 1) ? 1 : 0,
-              doneType: (doneFlag == 1) ? 'hand' : 'none',
+              doneType: doneType,
               time: ""
             });
           }
@@ -1259,6 +1363,11 @@
     }
 
     function loadActiveProjectData() {
+      filterRule = null;
+      try {
+        const savedRule = localStorage.getItem('yoshimachi_filter_rule_v1_' + activeProjectId);
+        if (savedRule) filterRule = JSON.parse(savedRule);
+      } catch (e) {}
       try {
         const rawData = localStorage.getItem('yoshimachi_proj_data_' + activeProjectId);
         if (rawData) {
@@ -1284,6 +1393,8 @@
       if (!activeProjectId) return;
       try {
         localStorage.setItem('yoshimachi_proj_data_' + activeProjectId, JSON.stringify(customers));
+        if (filterRule) localStorage.setItem('yoshimachi_filter_rule_v1_' + activeProjectId, JSON.stringify(filterRule));
+        else localStorage.removeItem('yoshimachi_filter_rule_v1_' + activeProjectId);
         const curProj = getActiveProject();
         if (curProj) {
           curProj.total = customers.length;
@@ -1468,7 +1579,7 @@
             "",
             "",
             c.doneType === 'hand' ? 1 : "",
-            1,
+            (c.doneType === 'skip' ? 0 : 1),
             c.id,
             c.name,
             c.kana,
@@ -1477,9 +1588,9 @@
             c.phone,
             c.rank,
             c.rfm,
-            "", "", "",
+            c.r || "", c.f || "", c.m || "",
             c.coords ? `${c.coords.lat}, ${c.coords.lng}` : "",
-            c.doneType === 'hand' ? "手渡し" : c.doneType === 'post' ? "ポスト投函" : c.doneType === 'absent' ? "不在" : "",
+            c.doneType === 'hand' ? "手渡し" : c.doneType === 'post' ? "ポスト投函" : c.doneType === 'absent' ? "不在" : c.doneType === 'skip' ? "配らない" : "",
             c.distStr || "",
             c.time || ""
           ]);
@@ -1513,6 +1624,136 @@
     // Auto save current project data
     function saveCache() {
       saveCurrentProjectData();
+    }
+
+    // =========================================================================
+    // 🎯 条件絞り込み: 3ステップ条件づくり（年数 × 最低購入金額）＋プリセット
+    // =========================================================================
+    const RULE_YEARS = [1, 2, 3, 5, 8];
+    const RULE_AMOUNTS = [10000, 30000, 50000, 100000];
+
+    function loadPresets() {
+      try { return JSON.parse(localStorage.getItem(PRESET_KEY) || "[]"); } catch (e) { return []; }
+    }
+    function savePresets(list) { try { localStorage.setItem(PRESET_KEY, JSON.stringify(list)); } catch (e) {} }
+
+    function openFilterModal() {
+      draftRule = filterRule ? { years: filterRule.years, minAmount: filterRule.minAmount } : { years: null, minAmount: null };
+      renderFilterModal();
+      document.getElementById('filterModal').classList.remove('hidden');
+    }
+    function closeFilterModal() { document.getElementById('filterModal').classList.add('hidden'); }
+
+    function previewCounts(y, m) {
+      let hit = 0, hitUnvisited = 0, hitDone = 0, skipN = 0, noData = 0;
+      customers.forEach(c => {
+        if (isSkip(c)) { skipN++; return; }
+        const d = parseRDate(c.r);
+        const amt = Number(c.m);
+        if (!d || isNaN(amt) || amt <= 0) { noData++; return; }
+        const yearsAgo = (Date.now() - d.getTime()) / (365.25 * 24 * 3600 * 1000);
+        if (yearsAgo <= y && amt >= m) {
+          hit++;
+          if (c.done === 1) hitDone++; else hitUnvisited++;
+        }
+      });
+      return { hit, hitUnvisited, hitDone, skipN, noData };
+    }
+
+    function setDraftYears(y) { draftRule.years = (draftRule.years === y) ? null : y; renderFilterModal(); }
+    function setDraftAmount(m) { draftRule.minAmount = (draftRule.minAmount === m) ? null : m; renderFilterModal(); }
+
+    function renderFilterModal() {
+      const box = document.getElementById('filterModalBody');
+      const ready = draftRule.years && draftRule.minAmount;
+      const pv = ready ? previewCounts(draftRule.years, draftRule.minAmount) : null;
+
+      const chip = (label, on, fn) =>
+        `<button onclick="${fn}" style="background:${on ? '#8b5cf6' : '#f1f5f9'}; color:${on ? '#fff' : '#334155'}; border:${on ? 'none' : '1px solid #cbd5e1'}; padding:8px 14px; border-radius:10px; font-size:13px; font-weight:800; cursor:pointer; margin:0 5px 6px 0;">${label}</button>`;
+
+      let html = `
+        <div style="font-size:11px; color:#64748b; margin-bottom:10px;">「いつまでに・いくら以上」買った人だけを配布対象にします。条件を変えるとその場で人数が変わります。</div>
+        <div style="font-size:12px; font-weight:800; color:#334155; margin-bottom:4px;">① いつまでさかのぼる？</div>
+        <div>${RULE_YEARS.map(y => chip(y + '年以内', draftRule.years === y, `setDraftYears(${y})`)).join('')}</div>
+        <div style="font-size:12px; font-weight:800; color:#334155; margin:8px 0 4px;">② 最低購入金額は？</div>
+        <div>${RULE_AMOUNTS.map(m => chip(fmtMan(m) + '以上', draftRule.minAmount === m, `setDraftAmount(${m})`)).join('')}</div>`;
+
+      if (pv) {
+        html += `
+        <div style="background:#f5f3ff; border:1.5px solid #c4b5fd; border-radius:10px; padding:8px 10px; margin:10px 0; font-size:12px; color:#4c1d95;">
+          ③ <strong>${draftRule.years}年以内・${fmtMan(draftRule.minAmount)}以上</strong> → <strong style="font-size:15px;">該当 ${pv.hit}人</strong>（うち未配布 ${pv.hitUnvisited}人 / 配布済 ${pv.hitDone}人）
+          ${pv.skipN ? `<br>🚫 配らない設定: ${pv.skipN}人は全条件で除外中` : ''}
+          ${pv.noData ? `<br><span style="color:#b45309;">※購入履歴が空の人は該当しません → ${pv.noData}人</span>` : ''}
+        </div>
+        <div style="display:flex; gap:8px; margin-bottom:10px;">
+          <button onclick="applyDraftRule()" style="flex:1; background:#8b5cf6; color:#fff; border:none; padding:10px; border-radius:10px; font-size:13px; font-weight:900; cursor:pointer;">✅ この条件で使う</button>
+          <button onclick="savePresetFromDraft()" style="background:#f1f5f9; border:1px solid #cbd5e1; color:#334155; padding:10px 12px; border-radius:10px; font-size:12px; font-weight:800; cursor:pointer;">💾 プリセット保存</button>
+        </div>`;
+      } else {
+        html += `<div style="background:#f8fafc; border:1px dashed #cbd5e1; border-radius:10px; padding:10px; margin:10px 0; font-size:11.5px; color:#64748b;">①と②を選ぶと、この場所に該当人数のプレビューが出ます。</div>`;
+      }
+
+      if (filterRule) {
+        html += `<button onclick="clearFilterRule()" style="width:100%; background:#fff7ed; border:1px solid #fdba74; color:#9a3412; padding:8px; border-radius:8px; font-size:12px; font-weight:800; cursor:pointer; margin-bottom:12px;">条件を外して全件表示に戻す（現在の条件: 直近${filterRule.years}年・${fmtMan(filterRule.minAmount)}以上）</button>`;
+      }
+
+      const presets = loadPresets();
+      html += `<div style="font-size:12px; font-weight:800; color:#334155; margin-bottom:6px;">💾 よく使う条件（プリセット）</div>`;
+      if (presets.length === 0) {
+        html += `<div style="font-size:10.5px; color:#94a3b8;">まだありません。条件を作って「💾 プリセット保存」を押すとここに並びます。</div>`;
+      } else {
+        presets.forEach((pr, idx) => {
+          html += `<div style="display:flex; justify-content:space-between; align-items:center; background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:6px 10px; margin-bottom:5px;">
+            <span style="font-size:12px; font-weight:700; color:#334155;">⏱ ${pr.years}年以内 × ${fmtMan(pr.minAmount)}以上</span>
+            <span style="display:flex; gap:6px;">
+              <button onclick="applyPreset(${idx})" style="background:#8b5cf6; color:#fff; border:none; padding:5px 10px; border-radius:6px; font-size:11px; font-weight:800; cursor:pointer;">適用</button>
+              <button onclick="deletePreset(${idx})" style="background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; padding:5px 8px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer;">🗑</button>
+            </span></div>`;
+        });
+      }
+      box.innerHTML = html;
+    }
+
+    function applyDraftRule() {
+      if (!draftRule.years || !draftRule.minAmount) return;
+      filterRule = { years: draftRule.years, minAmount: draftRule.minAmount };
+      const pv = previewCounts(filterRule.years, filterRule.minAmount);
+      recalculateDistances();
+      saveCurrentProjectData();
+      closeFilterModal();
+      showToast(`🎯 条件適用: 直近${filterRule.years}年・${fmtMan(filterRule.minAmount)}以上 → 対象${pv.hit}人`, '✅');
+    }
+    function applyPreset(idx) {
+      const pr = loadPresets()[idx];
+      if (!pr) return;
+      filterRule = { years: pr.years, minAmount: pr.minAmount };
+      recalculateDistances();
+      saveCurrentProjectData();
+      closeFilterModal();
+      showToast(`🎯 プリセット適用: ${pr.years}年以内 × ${fmtMan(pr.minAmount)}以上`, '✅');
+    }
+    function clearFilterRule() {
+      filterRule = null;
+      recalculateDistances();
+      saveCurrentProjectData();
+      closeFilterModal();
+      showToast('👀 条件を外して全件表示に戻しました');
+    }
+    function savePresetFromDraft() {
+      if (!draftRule.years || !draftRule.minAmount) return;
+      const presets = loadPresets();
+      if (!presets.some(p => p.years === draftRule.years && p.minAmount === draftRule.minAmount)) {
+        presets.push({ years: draftRule.years, minAmount: draftRule.minAmount });
+        savePresets(presets);
+      }
+      renderFilterModal();
+      showToast('💾 プリセットに保存しました');
+    }
+    function deletePreset(idx) {
+      const presets = loadPresets();
+      presets.splice(idx, 1);
+      savePresets(presets);
+      renderFilterModal();
     }
 
     function showToast(msg) {

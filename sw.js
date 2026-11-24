@@ -1,5 +1,5 @@
 // Service Worker for Delivery Navi PWA (Network-First strategy to ensure latest privacy-cleared code)
-const CACHE_NAME = 'delivery-navi-v9-projects';
+const CACHE_NAME = 'delivery-navi-v10-rules-skip';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

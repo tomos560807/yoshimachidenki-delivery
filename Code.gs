@@ -66,7 +66,14 @@ function doGet(e) {
       const fVal     = row[14];    // O列: F(購買頻度)
       const mVal     = row[15];    // P列: M(購買金額)
       const gpsRaw   = String(row[16] || "").trim(); // Q列: GPS座標 (緯度, 経度)
+      const procMemo = String(row[17] || "").trim(); // R列: 処理 (手渡し/ポスト投函/不在/配らない)
       const updated  = row[19];    // T列: 更新日時
+
+      let doneType = "";
+      if (procMemo.indexOf("配らない") > -1) doneType = "skip";
+      else if (procMemo.indexOf("投函") > -1) doneType = "post";
+      else if (procMemo.indexOf("不在") > -1) doneType = "absent";
+      else if (doneFlag === 1 || doneFlag === "1") doneType = "hand";
 
       // 配布予定が 1 の顧客、または氏名が入力されている行を対象とする
       if (custName && (planFlag === 1 || planFlag === "1" || planFlag === "")) {
@@ -98,6 +105,8 @@ function doGet(e) {
           m: mVal || 0,
           coords: (lat && lng) ? { lat: lat, lng: lng } : null,
           done: isDone ? 1 : 0,
+          doneType: doneType,
+          memo: procMemo,
           timestamp: formatDisplayTime(updated)
         });
       }
@@ -154,18 +163,27 @@ function doPost(e) {
       // 配布完了（手渡し or 投函）
       // A列に 1 を書き込み
       sheet.getRange(rowNumber, 1).setValue(1);
+      // E列 配布予定を 1 に（過去に「配らない」だった人の復帰）
+      sheet.getRange(rowNumber, 5).setValue(1);
       // T列に 更新日時 を書き込み
       sheet.getRange(rowNumber, 20).setValue(formattedTimestamp);
-      // R列（処理/備考）があれば種別を書き込み
+      // R列（処理/備考）に種別を書き込み
       sheet.getRange(rowNumber, 18).setValue(type === "hand" ? "手渡し" : "ポスト投函");
     } else if (type === "absent") {
       // 不在・後日
       sheet.getRange(rowNumber, 1).setValue(0);
       sheet.getRange(rowNumber, 18).setValue("不在 (" + Utilities.formatDate(now, "Asia/Tokyo", "HH:mm") + ")");
       sheet.getRange(rowNumber, 20).setValue(formattedTimestamp);
+    } else if (type === "skip") {
+      // 配らない（今年は配布しない）
+      sheet.getRange(rowNumber, 1).setValue(0);
+      sheet.getRange(rowNumber, 5).setValue(0);  // E列 配布予定=0
+      sheet.getRange(rowNumber, 18).setValue("配らない");
+      sheet.getRange(rowNumber, 20).setValue(formattedTimestamp);
     } else {
       // リセット（未訪問に戻す）
       sheet.getRange(rowNumber, 1).setValue(0);
+      sheet.getRange(rowNumber, 5).setValue(1);
       sheet.getRange(rowNumber, 18).setValue("");
       sheet.getRange(rowNumber, 20).setValue("");
     }
